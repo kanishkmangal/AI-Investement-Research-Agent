@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "AI Investment Research Agent | Antigravity",
-  description: "An advanced multi-agent investment research assistant built with LangGraph.js, Gemini 2.5 Flash, and Next.js.",
+  description: "An advanced multi-agent investment research assistant built with LangGraph.js, Groq, and Next.js.",
   authors: [{ name: "Antigravity Team" }],
 };
 

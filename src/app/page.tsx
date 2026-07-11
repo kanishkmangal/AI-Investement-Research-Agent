@@ -173,7 +173,7 @@ export default function Home() {
                 </div>
                 <h4 className="font-semibold text-white text-sm uppercase tracking-wide">Analysis Node</h4>
                 <p className="text-slate-400 text-xs leading-relaxed">
-                  Processes gathered stats through Gemini 2.5. Evaluates business growth model, pricing power, competitive moat, and risks.
+                  Processes gathered stats through Groq (Llama 3.3). Evaluates business growth model, pricing power, competitive moat, and risks.
                 </p>
               </div>
 

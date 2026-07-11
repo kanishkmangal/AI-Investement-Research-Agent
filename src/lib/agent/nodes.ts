@@ -1,4 +1,4 @@
-import { getLLM } from "../services/gemini";
+import { getLLM } from "../services/groq";
 import { searchWeb, SearchResult } from "../services/search";
 import { getFinancials } from "../services/finance";
 import { AgentState } from "./types";
@@ -60,7 +60,7 @@ export async function researchNode(state: AgentState) {
   // 3. Summarize news sentiment via LLM
   let newsSentiment = "No recent news found.";
   if (webSearchHits.length > 0) {
-    logs.push(...createLog("research", "Analyzing recent news sentiment using Gemini 2.5..."));
+    logs.push(...createLog("research", "Analyzing recent news sentiment using Groq..."));
     try {
       const llm = getLLM(0.2); // low temperature for summarization
       const newsHitsStr = webSearchHits
@@ -177,9 +177,9 @@ export async function analysisNode(state: AgentState) {
     // Heuristic fallback
     return {
       analysisData: {
-        businessFundamentals: "Analysis failed. Please check Gemini API configuration.",
-        competitivePosition: "Analysis failed. Please check Gemini API configuration.",
-        risksAndRedFlags: "Analysis failed. Please check Gemini API configuration.",
+        businessFundamentals: "Analysis failed. Please check Groq API configuration.",
+        competitivePosition: "Analysis failed. Please check Groq API configuration.",
+        risksAndRedFlags: "Analysis failed. Please check Groq API configuration.",
         sentimentAnalysis: research.newsSentiment,
       },
       logs,

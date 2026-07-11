@@ -2,7 +2,7 @@
 
 An advanced, full-stack AI agent application that takes a company name, conducts comprehensive real-time web and financial research, performs qualitative business analysis, and delivers a structured investment decision (**Invest** or **Pass**).
 
-Built using **Next.js** (App Router), **LangGraph.js**, **Tailwind CSS**, and the **Google Gemini 2.5** model via official integrations.
+Built using **Next.js** (App Router), **LangGraph.js**, **Tailwind CSS**, and the **Groq** model via official integrations.
 
 ---
 
@@ -13,7 +13,7 @@ Traditional investment analysis requires digging through search engines, checkin
 This application automates this entire process by executing an explicit, multi-node **LangGraph.js state machine pipeline** that:
 1. **Scrapes web directories and news sentiment** for the target company.
 2. **Queries Yahoo Finance** autocomplete and quotation endpoints for live market stats (Price, P/E ratio, Market Cap).
-3. **Conducts qualitative SWAT & fundamental analyses** using Gemini 2.5 Flash.
+3. **Conducts qualitative SWAT & fundamental analyses** using Groq.
 4. **Formulates an objective investment decision** (Invest / Pass) with structured justifications, confidence rankings, and a risk matrix.
 
 Execution progress and logs stream to the frontend in real time using Server-Sent Events (SSE).
@@ -34,9 +34,10 @@ cp .env.example .env.local
 
 Open `.env.local` and configure your API keys:
 ```env
-# 1. Google Gemini Key (Required)
-# Get a free key at: https://aistudio.google.com/
-GOOGLE_API_KEY=AIzaSy...
+# 1. Groq API Key (Required)
+# Get an API key at: https://console.groq.com
+GROQ_API_KEY=your_groq_api_key_here
+GROQ_MODEL=llama-3.3-70b-versatile
 
 # 2. Web Search API Keys (At least one is required)
 # Tavily API (Preferred): https://tavily.com/
@@ -76,13 +77,13 @@ Rather than running a single large prompt call that performs all actions (which 
   - Automatically queries Yahoo Finance's autocomplete API to resolve the company name to a stock ticker (e.g., `AAPL`).
   - Hips the Yahoo Finance quote endpoint to fetch live stock metrics (PE ratio, Cap size, 52-week statistics).
   - Triggers three parallel search runs targeting general fundamentals, competitive positioning, and news sentiment.
-  - Summarizes recent news articles and earnings announcements using Gemini 2.5 to evaluate current sentiment.
+  - Summarizes recent news articles and earnings announcements using Groq to evaluate current sentiment.
 - **State Updated**: `researchData` (web search hits, quotes, raw sentiment).
 
 ### 2. Analysis Node
 - **Input**: Collected `researchData`.
 - **Operations**:
-  - Instructs Gemini 2.5 in structured JSON mode to perform qualitative analysis.
+  - Instructs Groq in structured JSON mode to perform qualitative analysis.
   - Divides results into:
     - **Business Fundamentals**: Growth signals, profitability, valuation.
     - **Competitive Position**: Economic moat evaluation and competitor strengths.
@@ -93,7 +94,7 @@ Rather than running a single large prompt call that performs all actions (which 
 ### 3. Decision Node
 - **Input**: Quantitative quote metrics and qualitative `analysisData`.
 - **Operations**:
-  - Prompts Gemini 2.5 to act as the Investment Committee Chair and synthesize the report.
+  - Prompts Groq to act as the Investment Committee Chair and synthesize the report.
   - Finalizes a structured payload containing:
     - `decision`: "Invest" or "Pass"
     - `confidence`: "Low" | "Medium" | "High"
@@ -105,7 +106,7 @@ Rather than running a single large prompt call that performs all actions (which 
 
 ## Key Decisions & Trade-offs
 
-- **Swappable LLM Wrapper (`src/lib/services/gemini.ts`)**: Encapsulated the LangChain Gemini initialization. You can switch LLM models (e.g. `gemini-2.5-pro`, `gemini-1.5-flash`) by simply setting the `GEMINI_MODEL` environment variable.
+- **Swappable LLM Wrapper (`src/lib/services/groq.ts`)**: Encapsulates the LangChain Groq initialization. You can switch LLM models (e.g. `llama-3.3-70b-versatile`) by simply setting the `GROQ_MODEL` environment variable.
 - **Tavily vs. SerpAPI Fallback (`src/lib/services/search.ts`)**: Built a modular search helper that prioritizes Tavily API (specifically optimized for LLM search agents) but automatically falls back to SerpAPI if no Tavily credentials are provided.
 - **Yahoo Finance Autocomplete and Fallbacks**: Leveraged the public Yahoo Finance autocomplete endpoints to resolve symbols instead of requiring users to know tickers. If these rate-limit or fail, the agent gracefully falls back to web search estimates, ensuring zero-crash behavior.
 - **Event Streaming via SSE**: Implemented Next.js route streaming with `ReadableStream` and Server-Sent Events, transmitting logs node-by-node so users don't wait on a blank loading screen for 30+ seconds.
@@ -151,7 +152,8 @@ The application is fully compatible with Vercel and can be deployed in a single 
 
 1. Import the repository into your Vercel Dashboard.
 2. Add your environment variables in the project settings:
-   - `GOOGLE_API_KEY`
+   - `GROQ_API_KEY`
+   - `GROQ_MODEL`
    - `TAVILY_API_KEY` or `SERPAPI_API_KEY`
 3. Click **Deploy**. Vercel will automatically handle build settings, bundlers, and package assembly.
 

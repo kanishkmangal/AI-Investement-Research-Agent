@@ -11,9 +11,6 @@ export function Header() {
           </div>
           <div>
             <span className="font-extrabold text-white text-lg tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-100 to-slate-400">
-              ANTIGRAVITY
-            </span>
-            <span className="text-[10px] block font-mono text-indigo-400 -mt-1 font-semibold tracking-wider">
               INVESTMENT AGENT
             </span>
           </div>
