@@ -149,16 +149,15 @@ export async function analysisNode(state: AgentState) {
     "sentimentAnalysis": "Synthesis of public perception, recent news sentiment, and stock market sentiment."
   }
   
-  Ensure the output is raw JSON ONLY. Do not include markdown formatting like \`\`\`json or \`\`\`. Start directly with { and end with }.`;
+  Ensure the output is raw JSON ONLY. Do not include markdown formatting like \`\`\`json or \`\`\`. Start directly with { and end with }. IMPORTANT: All double quotes inside string values must be properly escaped with a backslash (\\"). Do NOT use unescaped double quotes inside JSON strings.`;
 
   try {
     const llm = getLLM(0.3, true); // JSON mode
     const response = await llm.invoke(prompt);
     const textContent = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
     
-    // Parse response
-    const cleanText = textContent.replace(/```json/g, "").replace(/```/g, "").trim();
-    const parsedAnalysis = JSON.parse(cleanText);
+    // Parse response robustly
+    const parsedAnalysis = parseLLMJson(textContent);
 
     logs.push(...createLog("analysis", "Analysis of business models, financials, and risk vectors completed."));
     return {
@@ -239,15 +238,14 @@ export async function decisionNode(state: AgentState) {
     ]
   }
   
-  Ensure the output is raw JSON ONLY. Do not include markdown formatting like \`\`\`json or \`\`\`. Start directly with { and end with }.`;
+  Ensure the output is raw JSON ONLY. Do not include markdown formatting like \`\`\`json or \`\`\`. Start directly with { and end with }. IMPORTANT: All double quotes inside string values must be properly escaped with a backslash (\\"). Do NOT use unescaped double quotes inside JSON strings.`;
 
   try {
     const llm = getLLM(0.1, true); // Low temperature for high consistency
     const response = await llm.invoke(prompt);
     const textContent = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
     
-    const cleanText = textContent.replace(/```json/g, "").replace(/```/g, "").trim();
-    const parsedDecision = JSON.parse(cleanText);
+    const parsedDecision = parseLLMJson(textContent);
 
     // Normalize values
     const decision: "Invest" | "Pass" = parsedDecision.decision === "Invest" ? "Invest" : "Pass";
@@ -274,10 +272,93 @@ export async function decisionNode(state: AgentState) {
       decision: {
         decision: "Pass" as const,
         confidence: "Low" as const,
-        reasoning: ["Final decision failed to parse. Please check LLM credentials."],
+        reasoning: ["AI decision node failed to execute.", "Unable to complete risk analysis via LLM."],
         keyRisks: ["System execution error."],
       },
       logs,
     };
   }
+}
+
+/**
+ * Robustly parses JSON returned by LLMs, handling markdown blocks, control characters,
+ * trailing commas, and unescaped quotes inside JSON strings.
+ */
+function parseLLMJson(rawText: string): any {
+  let text = rawText.replace(/```json/gi, "").replace(/```/g, "").trim();
+
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    text = text.slice(firstBrace, lastBrace + 1);
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (firstError) {
+    let cleaned = text
+      .replace(/[\u0000-\u001F]+/g, (m) => m.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t"))
+      .replace(/,\s*([\]}])/g, "$1");
+
+    try {
+      return JSON.parse(cleaned);
+    } catch (secondError) {
+      const repaired = repairUnescapedQuotes(cleaned);
+      try {
+        return JSON.parse(repaired);
+      } catch (finalError) {
+        console.error("[LLM JSON Parse] Failed to parse JSON even after repair:", finalError);
+        console.error("[LLM JSON Parse] Raw text sample:", rawText.slice(0, 800));
+        throw finalError;
+      }
+    }
+  }
+}
+
+function repairUnescapedQuotes(jsonStr: string): string {
+  let inString = false;
+  let escaped = false;
+  let result = "";
+
+  for (let i = 0; i < jsonStr.length; i++) {
+    const char = jsonStr[i];
+
+    if (escaped) {
+      result += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      result += char;
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"') {
+      if (!inString) {
+        inString = true;
+        result += char;
+      } else {
+        let nextChar = '';
+        for (let j = i + 1; j < jsonStr.length; j++) {
+          if (/\S/.test(jsonStr[j])) {
+            nextChar = jsonStr[j];
+            break;
+          }
+        }
+        if (nextChar === ',' || nextChar === '}' || nextChar === ']' || nextChar === ':') {
+          inString = false;
+          result += char;
+        } else {
+          result += '\\"';
+        }
+      }
+      continue;
+    }
+
+    result += char;
+  }
+
+  return result;
 }
