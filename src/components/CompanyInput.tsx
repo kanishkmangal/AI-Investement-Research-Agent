@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Search, Loader2 } from "lucide-react";
+import { Search, ArrowRight, Loader2 } from "lucide-react";
 
 interface CompanyInputProps {
   onAnalyze: (companyName: string) => void;
@@ -18,44 +18,69 @@ export function CompanyInput({ onAnalyze, isLoading }: CompanyInputProps) {
     }
   };
 
+  const handlePillClick = (promptValue: string) => {
+    if (!isLoading) {
+      setCompanyName(promptValue);
+      onAnalyze(promptValue);
+    }
+  };
+
   return (
-    <form onSubmit={handleSubmit} className="w-full max-w-2xl mx-auto">
-      <div className="relative group">
-        {/* Glow effect */}
-        <div className="absolute -inset-0.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-2xl blur opacity-30 group-hover:opacity-50 transition duration-1000 group-focus-within:opacity-60"></div>
-        
-        {/* Inner container */}
-        <div className="relative flex items-center bg-slate-900/90 border border-slate-800 rounded-2xl p-2.5 backdrop-blur-xl">
-          <div className="flex items-center pl-3 pr-2 text-slate-500">
-            <Search className="w-5 h-5 group-hover:text-indigo-400 transition-colors" />
+    <div className="w-full max-w-xl mx-auto">
+      <form onSubmit={handleSubmit} className="w-full">
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-2 sm:p-2.5 shadow-[0_4px_20px_rgba(0,0,0,0.04)] flex items-center gap-2.5 transition-all focus-within:ring-2 focus-within:ring-[#3A22D8]/20 focus-within:border-[#3A22D8]">
+          <div className="flex items-center pl-3 text-slate-400">
+            <Search className="w-5 h-5" />
           </div>
-          
+
           <input
             type="text"
             required
             disabled={isLoading}
             value={companyName}
             onChange={(e) => setCompanyName(e.target.value)}
-            placeholder="Enter company name (e.g. Nvidia, Tesla, Microsoft)..."
-            className="w-full bg-transparent border-0 text-white placeholder-slate-500 focus:outline-none focus:ring-0 text-base md:text-lg py-2.5 px-2"
+            placeholder="Enter dataset URL or prompt..."
+            className="flex-1 bg-transparent border-none text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-0 text-sm sm:text-base font-normal px-2"
           />
-          
+
           <button
             type="submit"
             disabled={isLoading || !companyName.trim()}
-            className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 disabled:from-slate-800 disabled:to-slate-800 text-white font-medium rounded-xl px-6 py-2.5 md:py-3 transition duration-200 disabled:text-slate-500 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/25 disabled:shadow-none"
+            className="flex items-center gap-1.5 bg-[#3A22D8] hover:bg-[#2C18B4] disabled:bg-slate-300 text-white font-semibold rounded-xl px-5 sm:px-6 py-2.5 transition duration-150 disabled:cursor-not-allowed text-sm sm:text-base shadow-sm"
           >
             {isLoading ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
-                <span>Analyzing...</span>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Analysing...</span>
               </>
             ) : (
-              <span>Analyze</span>
+              <>
+                <span>Analyse</span>
+                <ArrowRight className="w-4 h-4" />
+              </>
             )}
           </button>
         </div>
+      </form>
+
+      {/* Suggestion Pills matching the screenshot exactly */}
+      <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
+        {[
+          { label: "Market Trends", value: "Microsoft" },
+          { label: "Sentimental Analysis", value: "Reliance" },
+          { label: "Revenue Forecast", value: "NVIDIA" },
+        ].map((pill, idx) => (
+          <button
+            key={idx}
+            type="button"
+            disabled={isLoading}
+            onClick={() => handlePillClick(pill.value)}
+            className="bg-[#F1F5F9] hover:bg-slate-200/80 text-slate-600 text-xs font-medium px-4 py-1.5 rounded-full border border-slate-200/80 transition duration-150 disabled:opacity-50"
+          >
+            {pill.label}
+          </button>
+        ))}
       </div>
-    </form>
+    </div>
   );
 }

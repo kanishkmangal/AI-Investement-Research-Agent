@@ -7,7 +7,7 @@ import { ResearchTrail } from "@/components/ResearchTrail";
 import { DecisionCard } from "@/components/DecisionCard";
 import { Footer } from "@/components/Footer";
 import { AgentLogStep, ResearchData, AnalysisData, DecisionData } from "@/lib/agent/types";
-import { Sparkles, HelpCircle, Network, ShieldCheck, ChevronDown, ChevronUp } from "lucide-react";
+import { Sparkles, HelpCircle, Network, ShieldCheck, ChevronDown, ChevronUp, TrendingUp, Activity, Zap, Brain, Target } from "lucide-react";
 
 export default function Home() {
   const [companyName, setCompanyName] = useState("");
@@ -19,11 +19,9 @@ export default function Home() {
   const [decision, setDecision] = useState<DecisionData | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   
-  // Collapsible toggle for the logs trail on results page
   const [showTrailOnResult, setShowTrailOnResult] = useState(false);
 
   const handleAnalyze = async (company: string) => {
-    // Reset states
     setIsLoading(true);
     setIsComplete(false);
     setLogs([]);
@@ -60,18 +58,13 @@ export default function Home() {
         const { value, done } = await reader.read();
         if (done) break;
 
-        // Decode value and append to buffer
         buffer += decoder.decode(value, { stream: true });
-
-        // Split by SSE message separator
         const parts = buffer.split("\n\n");
-        // Keep the last part in buffer as it might be incomplete
         buffer = parts.pop() || "";
 
         for (const part of parts) {
           if (!part.trim()) continue;
 
-          // Parse SSE fields
           const lines = part.split("\n");
           let eventType = "";
           let eventData: any = null;
@@ -88,7 +81,6 @@ export default function Home() {
             }
           }
 
-          // Handle event types
           if (eventType === "log" && eventData) {
             setLogs((prev) => [...prev, eventData]);
           } else if (eventType === "state" && eventData) {
@@ -128,63 +120,117 @@ export default function Home() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col min-h-screen bg-[#F8FAFC]">
       <Header />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-12 flex flex-col justify-center">
         
-        {/* State 1: Welcome/Landing Dashboard */}
+        {/* State 1: Welcome/Landing UI matching screenshot layout + original text */}
         {!isLoading && !isComplete && (
-          <div className="space-y-12 max-w-4xl mx-auto text-center animate-fade-in">
-            <div className="space-y-4">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-indigo-500/20 bg-indigo-500/10 text-indigo-400 text-xs font-semibold uppercase tracking-wider">
+          <div className="max-w-5xl mx-auto w-full text-center animate-fade-in">
+            {/* Hero Section */}
+            <div className="mb-8 space-y-4">
+              <div className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-[#EEF2FF] text-[#4F46E5] text-xs font-bold uppercase tracking-wider">
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>Next-Gen Agent Analytics</span>
               </div>
-              <h1 className="text-4xl md:text-6xl font-extrabold text-white tracking-tight leading-tight">
-                AI Investment <br className="hidden sm:inline" />
-                <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-500">
-                  Research Agent
-                </span>
+
+              <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold text-[#0F172A] tracking-tight leading-tight">
+                AI Investment Research Agent
               </h1>
-              <p className="text-slate-400 text-base md:text-lg max-w-2xl mx-auto leading-relaxed">
-                Enter any company's name. Our automated agent executes a multi-node LangGraph pipeline to scrape search engines, fetch financial metrics, assess risks, and issue an objective Invest or Pass decision.
+
+              <p className="text-slate-600 text-base sm:text-lg max-w-2xl mx-auto leading-relaxed">
+                Enter any company&apos;s name. Our automated agent executes a multi-node LangGraph pipeline to scrape search engines, fetch financial metrics, assess risks, and issue an objective Invest or Pass decision.
               </p>
             </div>
 
-            {/* Input card */}
+            {/* Input Card */}
             <CompanyInput onAnalyze={handleAnalyze} isLoading={isLoading} />
 
-            {/* Pipeline explanation cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-3xl mx-auto pt-6 text-left">
-              <div className="bg-slate-900/30 border border-slate-800/80 rounded-xl p-5 backdrop-blur-sm space-y-2.5">
-                <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 font-bold font-mono text-sm">
-                  1
+            {/* Feature Cards Grid matching screenshot layout with your original text */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-5 max-w-5xl mx-auto mt-12 text-left">
+              {/* Left Large Card (md:col-span-7) */}
+              <div className="md:col-span-7 bg-white border border-slate-200/80 rounded-2xl p-6 shadow-[0_2px_12px_rgba(0,0,0,0.03)] flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-2 text-sky-600 font-mono text-xs font-bold uppercase mb-1">
+                    <span>Node 01</span>
+                  </div>
+                  <h3 className="text-xl font-bold text-slate-900">Research Node</h3>
+                  <p className="text-sm text-slate-600 mt-1.5 mb-6 leading-relaxed">
+                    Triggers concurrent Tavily/Serp searches. Queries Yahoo Finance quotes. Compiles stock trends and news headlines.
+                  </p>
                 </div>
-                <h4 className="font-semibold text-white text-sm uppercase tracking-wide">Research Node</h4>
-                <p className="text-slate-400 text-xs leading-relaxed">
-                  Triggers concurrent Tavily/Serp searches. Queries Yahoo Finance quotes. Compiles stock trends and news headlines.
-                </p>
+
+                {/* Visual Graphic matching screenshot banner */}
+                <div className="bg-gradient-to-br from-[#F8FAFC] via-[#F1F5F9] to-[#EEF2FF] rounded-xl p-5 border border-slate-200/60 relative overflow-hidden h-[195px] flex flex-col justify-center">
+                  <div className="absolute inset-0 bg-[radial-gradient(#CBD5E1_1px,transparent_1px)] [background-size:16px_16px] opacity-40"></div>
+
+                  <div className="relative z-10 flex flex-col items-center justify-center space-y-4">
+                    <div className="w-full flex items-center justify-between px-3">
+                      <div className="bg-white/95 border border-slate-200/80 rounded-lg p-2.5 shadow-sm flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4 text-[#3A22D8]" />
+                        <div>
+                          <p className="text-[10px] font-semibold text-slate-400 uppercase">Live Financials</p>
+                          <p className="text-xs font-bold text-slate-800">Yahoo Finance Quotes</p>
+                        </div>
+                      </div>
+
+                      <div className="bg-white/95 border border-slate-200/80 rounded-lg p-2.5 shadow-sm flex items-center gap-2">
+                        <Activity className="w-4 h-4 text-emerald-600" />
+                        <div>
+                          <p className="text-[10px] font-semibold text-slate-400 uppercase">Live Search</p>
+                          <p className="text-xs font-bold text-slate-800">Tavily Engine</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Waveform / bar chart visual */}
+                    <div className="w-full h-18 bg-white/80 border border-slate-200/80 rounded-lg p-3 shadow-sm flex items-end justify-between gap-1.5">
+                      {[30, 48, 35, 65, 52, 78, 60, 88, 70, 95, 82, 90, 72, 85].map((h, idx) => (
+                        <div
+                          key={idx}
+                          style={{ height: `${h}%` }}
+                          className="flex-1 bg-gradient-to-t from-[#3A22D8] to-indigo-400 rounded-sm opacity-85"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div className="bg-slate-900/30 border border-slate-800/80 rounded-xl p-5 backdrop-blur-sm space-y-2.5">
-                <div className="w-8 h-8 rounded-lg bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400 font-bold font-mono text-sm">
-                  2
+              {/* Right Column (md:col-span-5) */}
+              <div className="md:col-span-5 flex flex-col gap-5">
+                {/* Analysis Node Card */}
+                <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-[0_2px_12px_rgba(0,0,0,0.03)] flex-1 flex flex-col justify-center">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-[#EDE9FE] text-[#3A22D8] flex items-center justify-center font-bold">
+                      <Brain className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-[11px] font-mono font-bold text-[#3A22D8] uppercase">Node 02</span>
+                      <h4 className="text-lg font-bold text-slate-900 leading-tight">Analysis Node</h4>
+                    </div>
+                  </div>
+                  <p className="text-sm text-slate-600 mt-3 leading-relaxed">
+                    Processes gathered stats through Groq (Llama 3.3). Evaluates business growth model, pricing power, competitive moat, and risks.
+                  </p>
                 </div>
-                <h4 className="font-semibold text-white text-sm uppercase tracking-wide">Analysis Node</h4>
-                <p className="text-slate-400 text-xs leading-relaxed">
-                  Processes gathered stats through Groq (Llama 3.3). Evaluates business growth model, pricing power, competitive moat, and risks.
-                </p>
-              </div>
 
-              <div className="bg-slate-900/30 border border-slate-800/80 rounded-xl p-5 backdrop-blur-sm space-y-2.5">
-                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold font-mono text-sm">
-                  3
+                {/* Decision Node Card */}
+                <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-[0_2px_12px_rgba(0,0,0,0.03)] flex-1 flex flex-col justify-center">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-[#ECFDF5] text-[#059669] flex items-center justify-center font-bold">
+                      <Target className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-[11px] font-mono font-bold text-[#059669] uppercase">Node 03</span>
+                      <h4 className="text-lg font-bold text-slate-900 leading-tight">Decision Node</h4>
+                    </div>
+                  </div>
+                  <p className="text-sm text-slate-600 mt-3 leading-relaxed">
+                    Synthesizes detailed reports. Issues a structured final recommendation (Invest/Pass), confidence rating, and risk breakdown.
+                  </p>
                 </div>
-                <h4 className="font-semibold text-white text-sm uppercase tracking-wide">Decision Node</h4>
-                <p className="text-slate-400 text-xs leading-relaxed">
-                  Synthesizes detailed reports. Issues a structured final recommendation (Invest/Pass), confidence rating, and risk breakdown.
-                </p>
               </div>
             </div>
           </div>
@@ -194,10 +240,10 @@ export default function Home() {
         {isLoading && !isComplete && (
           <div className="space-y-6 animate-fade-in max-w-4xl mx-auto w-full">
             <div className="text-center space-y-3">
-              <h2 className="text-2xl font-bold text-white tracking-wide">
-                Researching: <span className="text-indigo-400">"{companyName}"</span>
+              <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+                Researching: <span className="text-[#3A22D8]">&quot;{companyName}&quot;</span>
               </h2>
-              <p className="text-sm text-slate-400 max-w-md mx-auto">
+              <p className="text-sm text-slate-600 max-w-md mx-auto">
                 Executing LangGraph state machine. Observe intermediate node outcomes below.
               </p>
             </div>
@@ -209,8 +255,7 @@ export default function Home() {
 
         {/* State 3: Completed Report Dashboard */}
         {isComplete && !error && (
-          <div className="space-y-8 animate-fade-in">
-            {/* The Main Decision Dashboard Card */}
+          <div className="space-y-8 animate-fade-in max-w-5xl mx-auto w-full">
             <DecisionCard
               companyName={companyName}
               researchData={researchData}
@@ -220,20 +265,20 @@ export default function Home() {
             />
 
             {/* Collapsible Section for Logs/Trail */}
-            <div className="w-full max-w-5xl mx-auto border border-slate-800 bg-slate-900/10 rounded-2xl overflow-hidden">
+            <div className="w-full border border-slate-200/80 bg-white rounded-2xl overflow-hidden shadow-sm">
               <button
                 onClick={() => setShowTrailOnResult(!showTrailOnResult)}
-                className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-900/40 transition text-sm font-semibold text-slate-400"
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition text-sm font-semibold text-slate-700"
               >
                 <div className="flex items-center gap-2">
-                  <Network className="w-4 h-4 text-indigo-400" />
+                  <Network className="w-4 h-4 text-[#3A22D8]" />
                   <span>View LangGraph Pipeline Execution Log</span>
                 </div>
                 {showTrailOnResult ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
               </button>
 
               {showTrailOnResult && (
-                <div className="p-6 border-t border-slate-850 bg-slate-950/40">
+                <div className="p-6 border-t border-slate-200 bg-slate-50/50">
                   <ResearchTrail logs={logs} isComplete={isComplete} error={error} />
                 </div>
               )}
@@ -244,14 +289,14 @@ export default function Home() {
         {/* State 4: Error Handling View */}
         {error && !isLoading && (
           <div className="w-full max-w-2xl mx-auto space-y-6 text-center animate-fade-in">
-            <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 p-6 rounded-2xl max-w-md mx-auto space-y-3">
+            <div className="bg-rose-50 border border-rose-200 text-rose-800 p-6 rounded-2xl max-w-md mx-auto space-y-3">
               <h3 className="font-bold text-lg">Analysis Interrupted</h3>
-              <p className="text-sm text-slate-300 leading-relaxed">{error}</p>
+              <p className="text-sm text-rose-600 leading-relaxed">{error}</p>
             </div>
 
             <button
               onClick={handleReset}
-              className="bg-slate-800 hover:bg-slate-700 text-white font-medium rounded-xl px-6 py-3 transition duration-200"
+              className="bg-[#3A22D8] hover:bg-[#2C18B4] text-white font-medium rounded-xl px-6 py-3 transition duration-200 shadow-sm"
             >
               Try Again
             </button>
