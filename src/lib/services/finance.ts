@@ -21,48 +21,68 @@ export interface FinancialMetrics {
 }
 
 /**
+ * Helper to wrap any promise with a timeout (default 15s).
+ */
+async function withTimeout<T>(promise: Promise<T>, timeoutMs = 15000): Promise<T> {
+  let timer: NodeJS.Timeout;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Operation timed out after ${timeoutMs}ms`)), timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
+/**
  * Resolves a company name to a stock ticker using yahoo-finance2 autocomplete search.
+ * Never throws an error; returns null on failure or unlisted companies.
  */
 async function resolveSymbol(companyName: string): Promise<{ symbol: string; name: string } | null> {
   try {
     console.log(`[Finance] Resolving ticker symbol using yahoo-finance2 for: "${companyName}"`);
-    const searchResult = (await yahooFinance.search(companyName)) as any;
+    const searchResult = await withTimeout((yahooFinance.search(companyName) as Promise<any>), 15000);
     
-    if (searchResult.quotes && searchResult.quotes.length > 0) {
-      // Find the first quote that is an EQUITY or ETF
+    if (searchResult && Array.isArray(searchResult.quotes) && searchResult.quotes.length > 0) {
       const equityQuote = searchResult.quotes.find((q: any) => q.quoteType === "EQUITY" || q.quoteType === "ETF") || searchResult.quotes[0];
-      return {
-        symbol: equityQuote.symbol,
-        name: equityQuote.shortname || equityQuote.longname || companyName
-      };
+      if (equityQuote && equityQuote.symbol) {
+        return {
+          symbol: equityQuote.symbol,
+          name: equityQuote.shortname || equityQuote.longname || companyName
+        };
+      }
     }
-  } catch (error) {
-    console.error(`[Finance] Error resolving symbol for "${companyName}":`, error);
+    console.warn(`[Finance] No ticker symbol resolved for company "${companyName}". Continuing research without stock market data.`);
+  } catch (error: any) {
+    console.warn(`[Finance] Symbol resolution failed for "${companyName}" (likely unlisted/private company or network error). Full error trace:`, error?.stack || error);
   }
   return null;
 }
 
 /**
  * Fetches quote data from Yahoo Finance via yahoo-finance2 for a specific ticker symbol.
+ * Never throws; returns null if data cannot be retrieved so research continues gracefully.
  */
 export async function getFinancials(companyName: string): Promise<FinancialMetrics | null> {
-  const resolved = await resolveSymbol(companyName);
-  if (!resolved) {
-    console.warn(`[Finance] Could not resolve ticker symbol for "${companyName}".`);
-    return null;
-  }
-
-  const { symbol, name } = resolved;
   try {
+    const resolved = await resolveSymbol(companyName);
+    if (!resolved) {
+      console.warn(`[Finance] Continuing research node without financial quote data for "${companyName}".`);
+      return null;
+    }
+
+    const { symbol, name } = resolved;
     console.log(`[Finance] Fetching stock quote via yahoo-finance2 for ticker: ${symbol}`);
-    const result = (await yahooFinance.quote(symbol)) as any;
+    const result = await withTimeout((yahooFinance.quote(symbol) as Promise<any>), 15000);
 
     if (!result) {
-      throw new Error(`No quote data found in response for symbol ${symbol}`);
+      console.warn(`[Finance] Empty quote result returned for symbol ${symbol}.`);
+      return null;
     }
 
     return {
-      symbol: result.symbol,
+      symbol: result.symbol || symbol,
       companyName: result.longName || result.shortName || name,
       price: result.regularMarketPrice ?? 0,
       currency: result.currency || "USD",
@@ -79,8 +99,8 @@ export async function getFinancials(companyName: string): Promise<FinancialMetri
       volume: result.regularMarketVolume ?? 0,
       averageVolume: result.averageVolume ?? 0
     };
-  } catch (error) {
-    console.error(`[Finance] Error fetching financials for symbol "${symbol}":`, error);
+  } catch (error: any) {
+    console.error(`[Finance] Error fetching financials for "${companyName}". Full error trace:`, error?.stack || error);
     return null;
   }
 }

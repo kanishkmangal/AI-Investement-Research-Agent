@@ -1,10 +1,12 @@
-import { getLLM } from "../services/groq";
+import { getLLM, invokeLLMWithRetry } from "../services/groq";
 import { searchWeb, SearchResult } from "../services/search";
 import { getFinancials } from "../services/finance";
 import { AgentState } from "./types";
 
-// Helper to create timestamped logs
-function createLog(node: "research" | "analysis" | "decision" | "system", message: string) {
+/**
+ * Helper to generate structured SSE log events.
+ */
+function createLog(node: "research" | "analysis" | "decision", message: string) {
   return [{
     node,
     message,
@@ -14,81 +16,80 @@ function createLog(node: "research" | "analysis" | "decision" | "system", messag
 
 /**
  * Node 1: Research Node
- * Gathers financials, web search results, and recent news sentiment.
+ * Scrapes news sentiment, resolves stock ticker, fetches live quote metrics, and gathers web search hits.
  */
 export async function researchNode(state: AgentState) {
   const companyName = state.companyName;
-  console.log(`[Node: Research] Starting research for ${companyName}`);
-  
-  const logs = createLog("research", `Starting research for "${companyName}"...`);
+  const logs = [...createLog("research", `Starting research pipeline for "${companyName}"...`)];
 
-  // 1. Resolve and fetch financial data
+  // 1. Fetch Live Financials (with non-crashing fallback for unlisted companies like "Jio")
+  logs.push(...createLog("research", `Resolving symbol & fetching stock quote for ${companyName}...`));
   let financials = null;
   try {
-    logs.push(...createLog("research", "Querying Yahoo Finance for ticker and real-time quotes..."));
     financials = await getFinancials(companyName);
     if (financials) {
-      logs.push(...createLog("research", `Successfully retrieved financial metrics for ticker ${financials.symbol}.`));
+      logs.push(...createLog("research", `Quote retrieved: ${financials.symbol} ($${financials.price}) | Mkt Cap: ${financials.marketCap}`));
     } else {
-      logs.push(...createLog("research", "No direct financial quote found. Falling back to search."));
+      logs.push(...createLog("research", `No live quote found for "${companyName}" (unlisted/private company). Continuing with web search data.`));
     }
-  } catch (error) {
-    console.error("[Research Node] Financial fetch failed:", error);
-    logs.push(...createLog("research", "Financial quote fetch encountered an error. Falling back to search."));
+  } catch (error: any) {
+    console.error("[Research Node] Financial quote retrieval error. Full stack trace:", error?.stack || error);
+    logs.push(...createLog("research", `Financial quote check skipped (${error?.message || "unlisted symbol"}). Relying on web search.`));
   }
 
-  // 2. Perform web search queries concurrently
-  logs.push(...createLog("research", "Initiating parallel web searches for fundamentals, competitive moat, and news..."));
-  const searchQueries = [
-    `"${companyName}" business model valuation market share`,
-    `"${companyName}" competitors SWOT analysis positioning`,
-    `"${companyName}" latest news sentiment stock performance`
-  ];
-
-  let webSearchHits: SearchResult[] = [];
+  // 2. Run Parallel Web Searches
+  logs.push(...createLog("research", `Scraping web directories and news sentiment for ${companyName}...`));
+  let searchResults: SearchResult[][] = [[], [], []];
   try {
-    const searchPromises = searchQueries.map(q => searchWeb(q));
-    const searchResults = await Promise.all(searchPromises);
-    webSearchHits = searchResults.flat();
-    
-    logs.push(...createLog("research", `Retrieved ${webSearchHits.length} web search result articles/snippets.`));
-  } catch (error) {
-    console.error("[Research Node] Web search failed:", error);
-    logs.push(...createLog("research", "Web search failed. Proceeding with available metrics."));
+    searchResults = await Promise.all([
+      searchWeb(`${companyName} company business model growth news`).catch((err) => {
+        console.error("[Research Node] Web search query 1 failed:", err?.stack || err);
+        return [];
+      }),
+      searchWeb(`${companyName} competitors competitive advantage economic moat`).catch((err) => {
+        console.error("[Research Node] Web search query 2 failed:", err?.stack || err);
+        return [];
+      }),
+      searchWeb(`${companyName} recent news sentiment earnings scandal risks`).catch((err) => {
+        console.error("[Research Node] Web search query 3 failed:", err?.stack || err);
+        return [];
+      })
+    ]);
+  } catch (error: any) {
+    console.error("[Research Node] Parallel search error. Full stack trace:", error?.stack || error);
   }
 
-  // 3. Summarize news sentiment via LLM
+  const webSearchHits = searchResults.flat().filter((r, i, self) => 
+    i === self.findIndex((t) => t.url === r.url && r.url !== "") || (r.url === "" && i < 10)
+  );
+  logs.push(...createLog("research", `Retrieved ${webSearchHits.length} relevant web & news hits.`));
+
+  // 3. Summarize news sentiment via LLM with retry
   let newsSentiment = "No recent news found.";
   if (webSearchHits.length > 0) {
     logs.push(...createLog("research", "Analyzing recent news sentiment using Groq..."));
     try {
-      const llm = getLLM(0.2); // low temperature for summarization
+      const llm = getLLM(0.2);
       const newsHitsStr = webSearchHits
         .slice(0, 8)
-        .map((h, i) => `[Source ${i+1}]: ${h.title}\nContent: ${h.content}`)
+        .map((h, i) => `[Hit ${i+1}] ${h.title}: ${h.content}`)
         .join("\n\n");
 
-      const prompt = `You are a financial news analyst. Based on the following news snippets about ${companyName}, summarize the overall recent sentiment (e.g., positive, neutral, negative) and highlight 3-4 key news events, earnings results, or product launches that are driving this sentiment. Keep it concise.
+      const sentimentPrompt = `Analyze the recent public news and market sentiment for "${companyName}" based on the following web search excerpts. Provide a concise, objective 3-4 sentence executive summary of current public/market perception, notable recent developments, and overall sentiment trajectory.\n\nExcerpts:\n${newsHitsStr}`;
       
-      News snippets:
-      ${newsHitsStr}
-      
-      Summary of News Sentiment:`;
-
-      const response = await llm.invoke(prompt);
+      const response = await invokeLLMWithRetry(llm, sentimentPrompt, 2);
       newsSentiment = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
-      logs.push(...createLog("research", "Completed recent news sentiment extraction."));
-    } catch (error) {
-      console.error("[Research Node] Sentiment summarization failed:", error);
-      logs.push(...createLog("research", "News sentiment analysis failed. Using raw search fallback."));
-      newsSentiment = "Unable to summarize sentiment due to API limits. Proceeding to analysis node.";
+    } catch (error: any) {
+      console.error("[Research Node] News sentiment LLM summarization failed. Full stack trace:", error?.stack || error);
+      newsSentiment = "Public news sentiment could not be synthesized via LLM. See raw search hits.";
     }
   }
 
   return {
     researchData: {
-      webSearchHits,
+      companyName,
       financials,
+      webSearchHits,
       newsSentiment,
     },
     logs,
@@ -97,34 +98,22 @@ export async function researchNode(state: AgentState) {
 
 /**
  * Node 2: Analysis Node
- * Processes research data to evaluate fundamentals, competitive position, and risks.
+ * Conducts deep qualitative analysis (SWAT, business fundamentals, competitive moat, risks) via Groq LLM.
  */
 export async function analysisNode(state: AgentState) {
   const companyName = state.companyName;
   const research = state.researchData;
-  console.log(`[Node: Analysis] Starting business analysis for ${companyName}`);
-
-  const logs = createLog("analysis", `Starting deep investment analysis for "${companyName}"...`);
+  const logs = [...createLog("analysis", `Starting business analysis for ${companyName}...`)];
 
   if (!research) {
-    logs.push(...createLog("analysis", "Error: No research data available. Skipping detailed analysis."));
-    return {
-      analysisData: {
-        businessFundamentals: "N/A",
-        competitivePosition: "N/A",
-        risksAndRedFlags: "N/A",
-        sentimentAnalysis: "N/A",
-      },
-      logs,
-    };
+    throw new Error("Analysis Node executed without prior researchData.");
   }
 
-  logs.push(...createLog("analysis", "Synthesizing business fundamentals, growth drivers, and market moat..."));
+  const financials = research.financials;
+  const financialsStr = financials 
+    ? `Ticker: ${financials.symbol} | Price: $${financials.price} | Mkt Cap: ${financials.marketCap} | P/E: ${financials.peRatio ?? 'N/A'} | 52W High/Low: $${financials.fiftyTwoWeekHigh}/$${financials.fiftyTwoWeekLow}`
+    : "No stock market quote metrics available (unlisted or private company). Conduct analysis using web search data.";
 
-  // Build the analysis prompt
-  const financialsStr = research.financials 
-    ? JSON.stringify(research.financials, null, 2) 
-    : "No quantitative financials available.";
   const searchStr = research.webSearchHits
     .slice(0, 10)
     .map((h, i) => `[Hit ${i+1}] Title: ${h.title}\nSnippet: ${h.content}`)
@@ -153,33 +142,33 @@ export async function analysisNode(state: AgentState) {
 
   try {
     const llm = getLLM(0.3, true); // JSON mode
-    const response = await llm.invoke(prompt);
+    const response = await invokeLLMWithRetry(llm, prompt, 2);
     const textContent = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
     
-    // Parse response robustly
-    const parsedAnalysis = parseLLMJson(textContent);
+    // Parse response robustly with retry
+    const parsedAnalysis = parseLLMJsonWithRetry(textContent);
 
     logs.push(...createLog("analysis", "Analysis of business models, financials, and risk vectors completed."));
     return {
       analysisData: {
-        businessFundamentals: parsedAnalysis.businessFundamentals || "No data provided.",
-        competitivePosition: parsedAnalysis.competitivePosition || "No data provided.",
-        risksAndRedFlags: parsedAnalysis.risksAndRedFlags || "No data provided.",
-        sentimentAnalysis: parsedAnalysis.sentimentAnalysis || "No data provided.",
+        businessFundamentals: parsedAnalysis?.businessFundamentals || "Analysis data not provided.",
+        competitivePosition: parsedAnalysis?.competitivePosition || "Analysis data not provided.",
+        risksAndRedFlags: parsedAnalysis?.risksAndRedFlags || "Analysis data not provided.",
+        sentimentAnalysis: parsedAnalysis?.sentimentAnalysis || research.newsSentiment || "No sentiment data provided.",
       },
       logs,
     };
-  } catch (error) {
-    console.error("[Analysis Node] Analysis prompt failed:", error);
-    logs.push(...createLog("analysis", "AI analysis node failed. Falling back to heuristic summary."));
+  } catch (error: any) {
+    console.error("[Analysis Node] Analysis LLM prompt failed after retries. Full stack trace:", error?.stack || error);
+    logs.push(...createLog("analysis", "AI analysis node encountered parsing/LLM error. Returning structured fallback analysis."));
     
-    // Heuristic fallback
+    // Structured error fallback instead of crashing
     return {
       analysisData: {
-        businessFundamentals: "Analysis failed. Please check Groq API configuration.",
-        competitivePosition: "Analysis failed. Please check Groq API configuration.",
-        risksAndRedFlags: "Analysis failed. Please check Groq API configuration.",
-        sentimentAnalysis: research.newsSentiment,
+        businessFundamentals: "Analysis failed after retries. Structured data could not be parsed.",
+        competitivePosition: "Competitive position evaluation incomplete.",
+        risksAndRedFlags: "Risk evaluation incomplete due to LLM error.",
+        sentimentAnalysis: research.newsSentiment || "Sentiment summary unavailable.",
       },
       logs,
     };
@@ -192,28 +181,18 @@ export async function analysisNode(state: AgentState) {
  */
 export async function decisionNode(state: AgentState) {
   const companyName = state.companyName;
+  const research = state.researchData;
   const analysis = state.analysisData;
-  const financials = state.researchData?.financials;
-  console.log(`[Node: Decision] Formulating final investment decision for ${companyName}`);
+  const logs = [...createLog("decision", `Formulating final investment decision for ${companyName}...`)];
 
-  const logs = createLog("decision", "Formulating final investment verdict...");
-
-  if (!analysis) {
-    logs.push(...createLog("decision", "Error: No analysis data available. Defaulting to Pass."));
-    return {
-      decision: {
-        decision: "Pass" as const,
-        confidence: "Low" as const,
-        reasoning: ["No analysis data available."],
-        keyRisks: ["Lack of data."],
-      },
-      logs,
-    };
+  if (!research || !analysis) {
+    throw new Error("Decision Node executed without prior researchData or analysisData.");
   }
 
+  const financials = research.financials;
   const financialsStr = financials 
-    ? `Ticker: ${financials.symbol}, Market Cap: ${financials.marketCap}, P/E Ratio: ${financials.peRatio || 'N/A'}, Price: ${financials.price}` 
-    : "No stock market stats available.";
+    ? `Ticker: ${financials.symbol}, Market Cap: ${financials.marketCap}, P/E Ratio: ${financials.peRatio || 'N/A'}, Price: $${financials.price}` 
+    : "No stock market stats available (unlisted or private company). Evaluate qualitative business strength.";
 
   const prompt = `You are the Chairman of the Investment Committee. Formulate a final investment verdict ("Invest" or "Pass") for ${companyName} based on the senior analyst's findings.
   
@@ -242,14 +221,13 @@ export async function decisionNode(state: AgentState) {
 
   try {
     const llm = getLLM(0.1, true); // Low temperature for high consistency
-    const response = await llm.invoke(prompt);
+    const response = await invokeLLMWithRetry(llm, prompt, 2);
     const textContent = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
     
-    const parsedDecision = parseLLMJson(textContent);
+    const parsedDecision = parseLLMJsonWithRetry(textContent);
 
-    // Normalize values
-    const decision: "Invest" | "Pass" = parsedDecision.decision === "Invest" ? "Invest" : "Pass";
-    const confidence: "Low" | "Medium" | "High" = ["Low", "Medium", "High"].includes(parsedDecision.confidence) 
+    const decision: "Invest" | "Pass" = parsedDecision?.decision === "Invest" ? "Invest" : "Pass";
+    const confidence: "Low" | "Medium" | "High" = ["Low", "Medium", "High"].includes(parsedDecision?.confidence) 
       ? parsedDecision.confidence 
       : "Medium";
 
@@ -259,21 +237,21 @@ export async function decisionNode(state: AgentState) {
       decision: {
         decision,
         confidence,
-        reasoning: Array.isArray(parsedDecision.reasoning) ? parsedDecision.reasoning : ["No details provided."],
-        keyRisks: Array.isArray(parsedDecision.keyRisks) ? parsedDecision.keyRisks : ["No details provided."],
+        reasoning: Array.isArray(parsedDecision?.reasoning) ? parsedDecision.reasoning : ["Reasoning generated based on qualitative & quantitative findings."],
+        keyRisks: Array.isArray(parsedDecision?.keyRisks) ? parsedDecision.keyRisks : ["General market and operational risks apply."],
       },
       logs,
     };
-  } catch (error) {
-    console.error("[Decision Node] Final decision formulation failed:", error);
-    logs.push(...createLog("decision", "Failed to formulate structured decision due to LLM error. Defaulting to Pass."));
+  } catch (error: any) {
+    console.error("[Decision Node] Decision prompt failed after retries. Full stack trace:", error?.stack || error);
+    logs.push(...createLog("decision", "Final decision node failed. Returning structured conservative fallback verdict."));
     
     return {
       decision: {
         decision: "Pass" as const,
         confidence: "Low" as const,
-        reasoning: ["AI decision node failed to execute.", "Unable to complete risk analysis via LLM."],
-        keyRisks: ["System execution error."],
+        reasoning: ["AI decision node encountered execution error.", "Unable to complete full risk synthesis via LLM."],
+        keyRisks: ["System execution interruption."],
       },
       logs,
     };
@@ -281,38 +259,52 @@ export async function decisionNode(state: AgentState) {
 }
 
 /**
- * Robustly parses JSON returned by LLMs, handling markdown blocks, control characters,
- * trailing commas, and unescaped quotes inside JSON strings.
+ * Wraps JSON parsing in try/catch with logging of raw output, code fence stripping,
+ * quote repairing, and one retry attempt.
  */
-function parseLLMJson(rawText: string): any {
-  let text = rawText.replace(/```json/gi, "").replace(/```/g, "").trim();
+function parseLLMJsonWithRetry(rawText: string): any {
+  // Attempt 1: Strip code fences and parse
+  try {
+    return parseSingleAttempt(rawText);
+  } catch (firstError: any) {
+    console.warn("[LLM JSON Parse] First parse attempt failed. Raw output snippet:", rawText.slice(0, 1000));
+    console.warn("[LLM JSON Parse] First error trace:", firstError?.stack || firstError);
 
+    // Attempt 2: Clean unescaped control chars & repair unescaped quotes more aggressively
+    try {
+      let cleaned = rawText
+        .replace(/```json/gi, "")
+        .replace(/```/g, "")
+        .trim();
+
+      const firstBrace = cleaned.indexOf('{');
+      const lastBrace = cleaned.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        cleaned = cleaned.slice(firstBrace, lastBrace + 1);
+      }
+
+      cleaned = cleaned
+        .replace(/[\u0000-\u001F]+/g, (m) => m.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t"))
+        .replace(/,\s*([\]}])/g, "$1");
+
+      const repaired = repairUnescapedQuotes(cleaned);
+      return JSON.parse(repaired);
+    } catch (retryError: any) {
+      console.error("[LLM JSON Parse] Retry attempt failed. Raw output:", rawText);
+      console.error("[LLM JSON Parse] Full retry stack trace:", retryError?.stack || retryError);
+      throw retryError;
+    }
+  }
+}
+
+function parseSingleAttempt(rawText: string): any {
+  let text = rawText.replace(/```json/gi, "").replace(/```/g, "").trim();
   const firstBrace = text.indexOf('{');
   const lastBrace = text.lastIndexOf('}');
   if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
     text = text.slice(firstBrace, lastBrace + 1);
   }
-
-  try {
-    return JSON.parse(text);
-  } catch (firstError) {
-    let cleaned = text
-      .replace(/[\u0000-\u001F]+/g, (m) => m.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t"))
-      .replace(/,\s*([\]}])/g, "$1");
-
-    try {
-      return JSON.parse(cleaned);
-    } catch (secondError) {
-      const repaired = repairUnescapedQuotes(cleaned);
-      try {
-        return JSON.parse(repaired);
-      } catch (finalError) {
-        console.error("[LLM JSON Parse] Failed to parse JSON even after repair:", finalError);
-        console.error("[LLM JSON Parse] Raw text sample:", rawText.slice(0, 800));
-        throw finalError;
-      }
-    }
-  }
+  return JSON.parse(text);
 }
 
 function repairUnescapedQuotes(jsonStr: string): string {

@@ -18,8 +18,7 @@ export async function POST(req: NextRequest) {
     }
 
     const encoder = new TextEncoder();
-    
-    // Create a ReadableStream to enable Server-Sent Events (SSE)
+
     const stream = new ReadableStream({
       async start(controller) {
         const sendEvent = (event: string, data: any) => {
@@ -30,23 +29,23 @@ export async function POST(req: NextRequest) {
           }
         };
 
+        let accumulatedResearch: any = null;
+        let accumulatedAnalysis: any = null;
+        let accumulatedDecision: any = null;
+        const failedComponents: string[] = [];
+
         try {
-          // 1. Send initial system startup log
           sendEvent("log", {
             node: "system",
-            message: `Initializing Research Agent for: "${companyName.trim()}"...`,
+            message: `Initializing Resilient Research Agent for: "${companyName.trim()}"...`,
             timestamp: new Date().toISOString()
           });
 
-          // 2. Execute LangGraph stream
           console.log(`[API] Executing LangGraph for company: ${companyName}`);
-          
+
           const runInput = { companyName: companyName.trim() };
           const runConfig = { recursionLimit: 15 };
           const agentStream = await graph.stream(runInput, runConfig);
-
-          let accumulatedResearch: any = null;
-          let accumulatedAnalysis: any = null;
 
           for await (const chunk of agentStream) {
             const typedChunk = chunk as Record<string, any>;
@@ -54,14 +53,21 @@ export async function POST(req: NextRequest) {
             for (const nodeName of nodes) {
               const nodeOutput = typedChunk[nodeName];
 
-              // Stream logs if present
               if (nodeOutput.logs && Array.isArray(nodeOutput.logs)) {
                 for (const log of nodeOutput.logs) {
                   sendEvent("log", log);
+                  if (typeof log.message === "string" && (
+                    log.message.toLowerCase().includes("failed") ||
+                    log.message.toLowerCase().includes("error") ||
+                    log.message.toLowerCase().includes("fallback")
+                  )) {
+                    if (!failedComponents.includes(log.node || nodeName)) {
+                      failedComponents.push(log.node || nodeName);
+                    }
+                  }
                 }
               }
 
-              // Keep track of outputs as they complete
               if (nodeName === "research" && nodeOutput.researchData) {
                 accumulatedResearch = nodeOutput.researchData;
                 sendEvent("state", { node: "research", data: accumulatedResearch });
@@ -73,20 +79,53 @@ export async function POST(req: NextRequest) {
               }
 
               if (nodeName === "decisionNode" && nodeOutput.decision) {
-                // Once decision node completes, send the final compiled payload
+                accumulatedDecision = nodeOutput.decision;
                 sendEvent("complete", {
                   companyName: companyName.trim(),
-                  researchData: accumulatedResearch,
-                  analysisData: accumulatedAnalysis,
-                  decision: nodeOutput.decision
+                  researchData: accumulatedResearch || { companyName, financials: null, webSearchHits: [], newsSentiment: "Data retrieval incomplete." },
+                  analysisData: accumulatedAnalysis || {
+                    businessFundamentals: "Analysis incomplete.",
+                    competitivePosition: "Analysis incomplete.",
+                    risksAndRedFlags: "Analysis incomplete.",
+                    sentimentAnalysis: "Analysis incomplete."
+                  },
+                  decision: accumulatedDecision,
+                  partialFailure: failedComponents.length > 0,
+                  failedComponents
                 });
               }
             }
           }
         } catch (error: any) {
-          console.error("[SSE Stream] Error in LangGraph execution:", error);
-          sendEvent("error", {
-            message: error.message || "An unexpected error occurred during research pipeline execution."
+          console.error("[SSE Stream] Partial or unexpected error in LangGraph execution. Full stack trace:", error?.stack || error);
+          if (!failedComponents.includes("pipeline")) {
+            failedComponents.push("pipeline");
+          }
+
+          sendEvent("log", {
+            node: "system",
+            message: `Pipeline encountered interruption (${error?.message || "Execution error"}). Returning successfully gathered partial data.`,
+            timestamp: new Date().toISOString()
+          });
+
+          // Return whatever partial data was successfully gathered along with partialFailure indicators
+          sendEvent("complete", {
+            companyName: companyName.trim(),
+            researchData: accumulatedResearch || { companyName, financials: null, webSearchHits: [], newsSentiment: "Data retrieval incomplete." },
+            analysisData: accumulatedAnalysis || {
+              businessFundamentals: "Analysis incomplete due to interruption.",
+              competitivePosition: "Analysis incomplete due to interruption.",
+              risksAndRedFlags: "Analysis incomplete due to interruption.",
+              sentimentAnalysis: "Analysis incomplete due to interruption."
+            },
+            decision: accumulatedDecision || {
+              decision: "Pass",
+              confidence: "Low",
+              reasoning: ["Pipeline execution encountered an interruption.", error?.message || "Check server logs."],
+              keyRisks: ["Incomplete data processing."]
+            },
+            partialFailure: true,
+            failedComponents
           });
         } finally {
           controller.close();
@@ -103,7 +142,7 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error("[API] Analyze API handler error:", error);
+    console.error("[API] Analyze API handler error. Full trace:", error?.stack || error);
     return new Response(JSON.stringify({ error: error.message || "Server Error" }), {
       status: 500,
       headers: { "Content-Type": "application/json" }

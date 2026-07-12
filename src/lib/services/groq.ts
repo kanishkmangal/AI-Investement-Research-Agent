@@ -14,6 +14,7 @@ export function getLLM(temperature = 0.2, jsonMode = false) {
     model: modelName,
     apiKey: apiKey,
     temperature: temperature,
+    maxRetries: 2,
   };
 
   if (jsonMode) {
@@ -23,4 +24,29 @@ export function getLLM(temperature = 0.2, jsonMode = false) {
   }
 
   return new ChatGroq(options);
+}
+
+/**
+ * Invokes a Groq LLM with exponential backoff retries (default 2 retries).
+ * Logs full error messages and stack traces on failures.
+ */
+export async function invokeLLMWithRetry(llm: ChatGroq, prompt: string, maxRetries = 2): Promise<any> {
+  let attempt = 0;
+  while (attempt <= maxRetries) {
+    try {
+      return await llm.invoke(prompt);
+    } catch (error: any) {
+      attempt++;
+      console.error(
+        `[LLM Retry] Groq LLM call failed on attempt ${attempt}/${maxRetries + 1}. Full error trace:`,
+        error?.stack || error
+      );
+      if (attempt > maxRetries) {
+        throw error;
+      }
+      const delayMs = Math.pow(2, attempt - 1) * 1000; // 1000ms, 2000ms
+      console.warn(`[LLM Retry] Retrying Groq call in ${delayMs}ms...`);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
 }

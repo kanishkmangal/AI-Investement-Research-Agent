@@ -7,13 +7,14 @@ export interface SearchResult {
 
 /**
  * Searches the web using Tavily API (preferred) or SerpAPI (fallback).
+ * Includes 15-second timeout and full stack trace logging.
  */
 export async function searchWeb(query: string): Promise<SearchResult[]> {
   const tavilyKey = process.env.TAVILY_API_KEY;
   const serpapiKey = process.env.SERPAPI_API_KEY;
 
   if (!tavilyKey && !serpapiKey) {
-    console.warn("No search API keys found. Web search will return empty results.");
+    console.warn("[Search] No search API keys found. Web search will return empty results.");
     return [];
   }
 
@@ -29,10 +30,11 @@ export async function searchWeb(query: string): Promise<SearchResult[]> {
           search_depth: "basic",
           max_results: 5,
         }),
+        signal: AbortSignal.timeout(15000),
       });
 
       if (!response.ok) {
-        throw new Error(`Tavily search request failed with status ${response.status}`);
+        throw new Error(`Tavily search request failed with status ${response.status}: ${response.statusText}`);
       }
 
       const data = await response.json();
@@ -44,8 +46,8 @@ export async function searchWeb(query: string): Promise<SearchResult[]> {
           snippet: r.snippet || r.content || "",
         }));
       }
-    } catch (error) {
-      console.error("[Search] Tavily search failed, checking for SerpAPI fallback:", error);
+    } catch (error: any) {
+      console.error("[Search] Tavily search failed. Full error trace:", error?.stack || error);
     }
   }
 
@@ -58,9 +60,11 @@ export async function searchWeb(query: string): Promise<SearchResult[]> {
       url.searchParams.append("api_key", serpapiKey);
       url.searchParams.append("engine", "google");
 
-      const response = await fetch(url.toString());
+      const response = await fetch(url.toString(), {
+        signal: AbortSignal.timeout(15000),
+      });
       if (!response.ok) {
-        throw new Error(`SerpAPI request failed with status ${response.status}`);
+        throw new Error(`SerpAPI request failed with status ${response.status}: ${response.statusText}`);
       }
 
       const data = await response.json();
@@ -73,8 +77,8 @@ export async function searchWeb(query: string): Promise<SearchResult[]> {
           snippet: r.snippet || "",
         }));
       }
-    } catch (error) {
-      console.error("[Search] SerpAPI search failed:", error);
+    } catch (error: any) {
+      console.error("[Search] SerpAPI search failed. Full error trace:", error?.stack || error);
     }
   }
 
